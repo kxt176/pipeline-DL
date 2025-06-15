@@ -305,7 +305,9 @@ wsl bash -lc "mkdir -p $outDirWsl"
 #  6) Pipeline steps definition
 # ——————————————————————————————————————————————————————————————————
 
-$steps = @{
+$steps = @(
+
+@{
   Name = 'Download dbSNP'
   Cmd  = @"
 cd /mnt/c/NGSTools/reference
@@ -429,15 +431,44 @@ fi
            $outDirWsl + '/final_variants.snpeff.vcf > ' +
            $outDirWsl + '/annotated_variants.tsv' },
 
-  @{ Name = 'MultiQC report'
-     Cmd = 'multiqc ' + $outDirWsl + ' -o ' + $outDirWsl + '/qc_report' },
 
-  @{ Name = 'Generate Python summary script'
-     Cmd  = "bash /mnt/c/NGSTools/generate_summary.sh `"$outDirWsl`""},
+#  Before running MultiQC
+    @{ Name = 'Samtools stats'
+   Cmd  = "samtools stats $outDirWsl/alignment.sorted.bam > $outDirWsl/alignment.stats.txt" },
 
-  @{ Name = 'Python summary'
-     Cmd  = "cd `"$outDirWsl`" && python3 summarize_variants.py"}
+@{
+    Name = 'SAMtools flagstat'
+    Cmd  = "samtools flagstat $outDirWsl/alignment.sorted.bam > $outDirWsl/alignment.flagstat.txt"
+  },
+  @{
+    Name = 'SAMtools idxstats'
+    Cmd  = "samtools idxstats $outDirWsl/alignment.sorted.bam > $outDirWsl/alignment.idxstats.txt"
+  },
+  @{
+    Name = 'BCFtools stats'
+    Cmd  = "bcftools stats $outDirWsl/final_variants.vcf.gz > $outDirWsl/final_variants.stats.txt"
+  },
 
+    #Apply hard filters and gather stats
+    @{
+      Name = 'Filter & stats'
+      Cmd  = "bcftools filter -i 'QD>2.0 & FS<60.0 & MQ>40.0' $outDirWsl/final_variants.vcf.gz | bcftools stats > $outDirWsl/filtered.stats.txt"
+    },
+
+#  Generate the MultiQC report
+@{ Name = 'MultiQC report'
+   Cmd  = @"
+multiqc $outDirWsl -o $outDirWsl/qc_report
+"@ },
+
+#  Python summary
+@{ Name = 'Generate Python summary script'
+   Cmd  = "bash /mnt/c/NGSTools/generate_summary.sh `"$outDirWsl`""},
+
+@{ Name = 'Python summary'
+   Cmd  = "cd `"$outDirWsl`" && python3 summarize_variants.py"}
+
+)
 # ——————————————————————————————————————————————————————————————————
 #  7) Run with progress bar
 # ——————————————————————————————————————————————————————————————————
